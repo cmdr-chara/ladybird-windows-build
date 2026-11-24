@@ -91,7 +91,7 @@ jobs:
           path: |
             .sccache
             Build/caches/vcpkg-binary-cache
-            Build/vcpkg
+            Build/vcpkg-release
             ~/.cargo/registry
           key: ladybird-win-deps-${{ hashFiles('vcpkg.json', 'Cargo.lock', 'Libraries/LibJS/Flap/Cargo.lock', 'rust-toolchain.toml') }}
           restore-keys: |
@@ -107,7 +107,7 @@ jobs:
           path: |
             .sccache
             Build/caches/vcpkg-binary-cache
-            Build/vcpkg
+            Build/vcpkg-release
             ~/.cargo/registry
           key: ladybird-win-deps-${{ hashFiles('vcpkg.json', 'Cargo.lock', 'Libraries/LibJS/Flap/Cargo.lock', 'rust-toolchain.toml') }}-${{ github.run_id }}
 
@@ -173,7 +173,7 @@ jobs:
           path: |
             .sccache
             Build/caches/vcpkg-binary-cache
-            Build/vcpkg
+            Build/vcpkg-release
             ~/.cargo/registry
           key: ladybird-win-deps-${{ hashFiles('vcpkg.json', 'Cargo.lock', 'Libraries/LibJS/Flap/Cargo.lock', 'rust-toolchain.toml') }}-${{ github.run_id }}
           restore-keys: |
