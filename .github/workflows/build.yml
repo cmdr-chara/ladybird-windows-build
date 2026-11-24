@@ -52,7 +52,7 @@ jobs:
       - name: Install build tools
         shell: bash
         run: |
-          choco install -y sccache pkgconfiglite --no-progress
+          choco install -y sccache pkgconfiglite ninja --no-progress
           if ! where clang-cl > /dev/null 2>&1 ; then
             # Keep in sync with the runner image's LLVM (see upstream ci.yml).
             choco install -y llvm --no-progress --version=20.1.8
@@ -144,7 +144,7 @@ jobs:
       - name: Install build tools
         shell: bash
         run: |
-          choco install -y sccache pkgconfiglite --no-progress
+          choco install -y sccache pkgconfiglite ninja --no-progress
           if ! where clang-cl > /dev/null 2>&1 ; then
             choco install -y llvm --no-progress --version=20.1.8
             echo "C:/Program Files/LLVM/bin" >> "${GITHUB_PATH}"
