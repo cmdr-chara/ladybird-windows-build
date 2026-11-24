@@ -187,7 +187,10 @@ jobs:
 
       - name: Configure
         shell: pwsh
-        run: cmake --preset Release -B Build -DLADYBIRD_BASELINE_CPU_TARGET=ON
+        # Newer Clang (>= 21) emits warnings upstream CI (Clang 20) never sees,
+        # and Ladybird builds with -Werror. Specific -Wno-x overrides -Werror
+        # regardless of flag order; extend the list as new ones appear.
+        run: cmake --preset Release -B Build -DLADYBIRD_BASELINE_CPU_TARGET=ON -DCMAKE_CXX_FLAGS=-Wno-unused-but-set-global -DCMAKE_C_FLAGS=-Wno-unused-but-set-global
 
       - name: Build
         working-directory: ${{ github.workspace }}/Build
