@@ -1,0 +1,212 @@
+name: Build Ladybird for Windows
+
+# Builds LadybirdBrowser/ladybird (experimental clang-cl Windows port) on a
+# GitHub-hosted Windows runner and uploads the installed tree as an artifact.
+#
+# Two jobs because a cold build exceeds one job's 6h limit on a 4-vCPU runner:
+#   deps  -> vcpkg third-party deps (Qt, skia, ffmpeg, icu, ...), then cache them
+#   build -> compile Ladybird against the cached deps, install, upload artifact.
+#
+# Usage: Actions -> "Build Ladybird for Windows" -> Run workflow.
+# Result: artifact "ladybird-windows-x86_64" (Install/ dir; Ladybird.exe in bin/).
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Ladybird ref (branch, tag or commit)'
+        required: false
+        default: 'master'
+
+env:
+  LADYBIRD_REPO: LadybirdBrowser/ladybird
+  LADYBIRD_REF: ${{ inputs.ref || 'master' }}
+
+jobs:
+  deps:
+    runs-on: windows-2025
+    timeout-minutes: 355
+    steps:
+      - name: Checkout Ladybird
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.LADYBIRD_REPO }}
+          ref: ${{ env.LADYBIRD_REF }}
+
+      - name: Setup environment
+        shell: bash
+        run: |
+          echo "LADYBIRD_SOURCE_DIR=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Set up Python environment
+        shell: bash
+        run: |
+          python_bin=$(python3 "${GITHUB_WORKSPACE}/Meta/Utils/python_environment.py" --print-bin | tr -d '\r')
+          echo "${python_bin}" >> "$GITHUB_PATH"
+
+      - name: Install build tools
+        shell: bash
+        run: |
+          choco install -y sccache pkgconfiglite --no-progress
+          if ! where clang-cl > /dev/null 2>&1 ; then
+            # Keep in sync with the runner image's LLVM (see upstream ci.yml).
+            choco install -y llvm --no-progress --version=20.1.8
+            echo "C:/Program Files/LLVM/bin" >> "${GITHUB_PATH}"
+            export PATH="/c/Program Files/LLVM/bin:${PATH}"
+          fi
+          clang-cl --version
+
+      - name: Warm up the Rust toolchain
+        shell: bash
+        run: rustup toolchain install && cargo --version && rustc --version
+
+      - name: Install wasm-tools
+        shell: bash
+        run: |
+          VERSION=1.243.0
+          NAME="wasm-tools-${VERSION}-x86_64-windows"
+          curl --fail --location --output "${NAME}.zip" "https://github.com/bytecodealliance/wasm-tools/releases/download/v${VERSION}/${NAME}.zip"
+          unzip "${NAME}.zip"
+          rm "${NAME}.zip"
+          mv "${NAME}" wasm-tools
+          echo "${GITHUB_WORKSPACE}/wasm-tools" >> "$GITHUB_PATH"
+
+      - name: Fetch cargo dependencies
+        shell: bash
+        run: |
+          for manifest in Cargo.toml Libraries/LibJS/Flap/Cargo.toml; do
+            if [ -f "${manifest}" ]; then
+              cargo fetch --locked --manifest-path "${manifest}"
+            fi
+          done
+
+      - name: Restore vcpkg caches
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            .sccache
+            Build/caches/vcpkg-binary-cache
+            Build/vcpkg
+            ~/.cargo/registry
+          key: ladybird-win-deps-${{ hashFiles('vcpkg.json', 'Cargo.lock', 'Libraries/LibJS/Flap/Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: |
+            ladybird-win-deps-
+
+      - name: Build vcpkg dependencies
+        shell: bash
+        run: ./Meta/ladybird.py vcpkg --preset Release
+
+      - name: Save vcpkg caches
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .sccache
+            Build/caches/vcpkg-binary-cache
+            Build/vcpkg
+            ~/.cargo/registry
+          key: ladybird-win-deps-${{ hashFiles('vcpkg.json', 'Cargo.lock', 'Libraries/LibJS/Flap/Cargo.lock', 'rust-toolchain.toml') }}-${{ github.run_id }}
+
+  build:
+    runs-on: windows-2025
+    needs: deps
+    timeout-minutes: 355
+    steps:
+      - name: Checkout Ladybird
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.LADYBIRD_REPO }}
+          ref: ${{ env.LADYBIRD_REF }}
+
+      - name: Setup environment
+        shell: bash
+        run: |
+          echo "LADYBIRD_SOURCE_DIR=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+          echo "SCCACHE_DIR=$GITHUB_WORKSPACE/.sccache" >> "$GITHUB_ENV"
+          echo "SCCACHE_CACHE_SIZE=2G" >> "$GITHUB_ENV"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Set up Python environment
+        shell: bash
+        run: |
+          python_bin=$(python3 "${GITHUB_WORKSPACE}/Meta/Utils/python_environment.py" --print-bin | tr -d '\r')
+          echo "${python_bin}" >> "$GITHUB_PATH"
+          echo "pythonLocation=$(dirname "${python_bin}")" >> "$GITHUB_ENV"
+
+      - name: Install build tools
+        shell: bash
+        run: |
+          choco install -y sccache pkgconfiglite --no-progress
+          if ! where clang-cl > /dev/null 2>&1 ; then
+            choco install -y llvm --no-progress --version=20.1.8
+            echo "C:/Program Files/LLVM/bin" >> "${GITHUB_PATH}"
+            export PATH="/c/Program Files/LLVM/bin:${PATH}"
+          fi
+          clang-cl --version
+
+      - name: Warm up the Rust toolchain
+        shell: bash
+        run: rustup toolchain install && cargo --version && rustc --version
+
+      - name: Install wasm-tools
+        shell: bash
+        run: |
+          VERSION=1.243.0
+          NAME="wasm-tools-${VERSION}-x86_64-windows"
+          curl --fail --location --output "${NAME}.zip" "https://github.com/bytecodealliance/wasm-tools/releases/download/v${VERSION}/${NAME}.zip"
+          unzip "${NAME}.zip"
+          rm "${NAME}.zip"
+          mv "${NAME}" wasm-tools
+          echo "${GITHUB_WORKSPACE}/wasm-tools" >> "$GITHUB_PATH"
+
+      - name: Restore vcpkg caches
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            .sccache
+            Build/caches/vcpkg-binary-cache
+            Build/vcpkg
+            ~/.cargo/registry
+          key: ladybird-win-deps-${{ hashFiles('vcpkg.json', 'Cargo.lock', 'Libraries/LibJS/Flap/Cargo.lock', 'rust-toolchain.toml') }}-${{ github.run_id }}
+          restore-keys: |
+            ladybird-win-deps-${{ hashFiles('vcpkg.json', 'Cargo.lock', 'Libraries/LibJS/Flap/Cargo.lock', 'rust-toolchain.toml') }}-
+            ladybird-win-deps-
+
+      - name: Fetch cargo dependencies
+        shell: bash
+        run: |
+          for manifest in Cargo.toml Libraries/LibJS/Flap/Cargo.toml; do
+            if [ -f "${manifest}" ]; then
+              cargo fetch --locked --manifest-path "${manifest}"
+            fi
+          done
+
+      - name: Configure
+        shell: pwsh
+        run: cmake --preset Release -B Build -DLADYBIRD_BASELINE_CPU_TARGET=ON
+
+      - name: Build
+        working-directory: ${{ github.workspace }}/Build
+        shell: bash
+        run: cmake --build .
+
+      - name: Install
+        working-directory: ${{ github.workspace }}/Build
+        shell: bash
+        run: cmake --install . --strip --prefix "${{ github.workspace }}/Install"
+
+      - name: Upload ladybird-windows
+        uses: actions/upload-artifact@v4
+        with:
+          name: ladybird-windows-x86_64
+          path: Install/
+          retention-days: 14
+          if-no-files-found: error
