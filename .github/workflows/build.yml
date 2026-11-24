@@ -54,8 +54,9 @@ jobs:
         run: |
           choco install -y sccache pkgconfiglite ninja --no-progress
           # windows-2025 ships MSVC 14.52 (VS 18): its STL requires Clang >= 22,
-          # so install the latest LLVM instead of the upstream-pinned 20.1.8.
-          choco install -y llvm --no-progress
+          # and the image has a choco-managed LLVM 20 preinstalled, so upgrade
+          # (install alone is a no-op on an already-installed package).
+          choco upgrade -y llvm --version=23.1.3 --no-progress
           echo "C:/Program Files/LLVM/bin" >> "${GITHUB_PATH}"
           clang-cl --version
 
@@ -143,7 +144,7 @@ jobs:
         shell: bash
         run: |
           choco install -y sccache pkgconfiglite ninja --no-progress
-          choco install -y llvm --no-progress
+          choco upgrade -y llvm --version=23.1.3 --no-progress
           echo "C:/Program Files/LLVM/bin" >> "${GITHUB_PATH}"
           clang-cl --version
 
