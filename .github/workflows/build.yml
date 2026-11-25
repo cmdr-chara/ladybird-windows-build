@@ -210,6 +210,41 @@ jobs:
         shell: bash
         run: cmake --install . --strip --prefix "${{ github.workspace }}/Install"
 
+      - name: Copy runtime dependencies
+        shell: pwsh
+        # windeployqt runs as part of the Ladybird build and stages Qt plus the
+        # vcpkg runtime DLLs in Build/bin, but cmake --install does not install
+        # those files. Copy only missing DLLs so stripped Ladybird binaries are
+        # not replaced by their unstripped build-tree counterparts.
+        run: |
+          $source = Join-Path $env:GITHUB_WORKSPACE "Build\bin"
+          $target = Join-Path $env:GITHUB_WORKSPACE "Install\bin"
+
+          Get-ChildItem $source -Filter "*.dll" -File | Where-Object {
+            -not (Test-Path (Join-Path $target $_.Name))
+          } | Copy-Item -Destination $target
+
+          Get-ChildItem $source -Directory | Where-Object {
+            [bool](Get-ChildItem $_.FullName -Filter "*.dll" -File -ErrorAction SilentlyContinue | Select-Object -First 1)
+          } | ForEach-Object {
+            Copy-Item $_.FullName $target -Recurse -Force
+          }
+
+      - name: Verify bundled runtime
+        shell: pwsh
+        run: |
+          $requiredFiles = @(
+            "Install\bin\Qt6Core.dll",
+            "Install\bin\Qt6Gui.dll",
+            "Install\bin\Qt6Widgets.dll",
+            "Install\bin\platforms\qwindows.dll"
+          )
+          foreach ($file in $requiredFiles) {
+            if (-not (Test-Path (Join-Path $env:GITHUB_WORKSPACE $file))) {
+              throw "Missing bundled runtime file: $file"
+            }
+          }
+
       - name: Upload ladybird-windows
         uses: actions/upload-artifact@v4
         with:
