@@ -217,3 +217,43 @@ jobs:
           path: Install/
           retention-days: 14
           if-no-files-found: error
+
+      - name: Build Inno Setup installer
+        shell: pwsh
+        run: |
+          choco install -y innosetup --no-progress
+          @'
+          [Setup]
+          AppName=Ladybird Browser
+          AppVerName=Ladybird Browser (experimental Windows port)
+          AppPublisher=Ladybird Browser Initiative
+          AppPublisherURL=https://ladybird.org/
+          DefaultDirName={autopf}\Ladybird
+          DefaultGroupName=Ladybird
+          OutputDir=Output
+          OutputBaseFilename=LadybirdSetup
+          Compression=lzma2
+          SolidCompression=yes
+          ArchitecturesAllowed=x64compatible
+          ArchitecturesInstallIn64BitMode=x64compatible
+          WizardStyle=modern
+
+          [Files]
+          Source: "Install\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
+
+          [Icons]
+          Name: "{group}\Ladybird"; Filename: "{app}\bin\Ladybird.exe"
+          Name: "{autodesktop}\Ladybird"; Filename: "{app}\bin\Ladybird.exe"
+
+          [Run]
+          Filename: "{app}\bin\Ladybird.exe"; Description: "Launch Ladybird"; Flags: nowait postinstall skipifsilent unchecked
+          '@ | Out-File -FilePath ladybird.iss -Encoding ascii
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" ladybird.iss
+
+      - name: Upload ladybird-setup
+        uses: actions/upload-artifact@v4
+        with:
+          name: ladybird-windows-setup
+          path: Output/LadybirdSetup.exe
+          retention-days: 14
+          if-no-files-found: error

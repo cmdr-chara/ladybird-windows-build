@@ -1,0 +1,68 @@
+name: Package installer from existing artifact
+# Repackages the Install/ tree of a previous successful "Build Ladybird for
+# Windows" run into LadybirdSetup.exe with Inno Setup — no recompilation.
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "Run ID of the successful build (default: latest successful)"
+        required: false
+        default: ""
+
+jobs:
+  package:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - name: Download build artifact
+        shell: pwsh
+        run: |
+          $runId = "${{ inputs.run_id }}"
+          if (-not $runId) {
+            $run = gh run list --repo cmdr-chara/ladybird-windows-build --workflow "Build Ladybird for Windows" --status success --limit 1 --json databaseId | ConvertFrom-Json
+            $runId = $run[0].databaseId
+          }
+          gh run download $runId --repo cmdr-chara/ladybird-windows-build --name ladybird-windows-x86_64 --dir Install
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Build Inno Setup installer
+        shell: pwsh
+        run: |
+          choco install -y innosetup --no-progress
+          @'
+          [Setup]
+          AppName=Ladybird Browser
+          AppVerName=Ladybird Browser (experimental Windows port)
+          AppPublisher=Ladybird Browser Initiative
+          AppPublisherURL=https://ladybird.org/
+          DefaultDirName={autopf}\Ladybird
+          DefaultGroupName=Ladybird
+          OutputDir=Output
+          OutputBaseFilename=LadybirdSetup
+          Compression=lzma2
+          SolidCompression=yes
+          ArchitecturesAllowed=x64compatible
+          ArchitecturesInstallIn64BitMode=x64compatible
+          WizardStyle=modern
+
+          [Files]
+          Source: "Install\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
+
+          [Icons]
+          Name: "{group}\Ladybird"; Filename: "{app}\bin\Ladybird.exe"
+          Name: "{autodesktop}\Ladybird"; Filename: "{app}\bin\Ladybird.exe"
+
+          [Run]
+          Filename: "{app}\bin\Ladybird.exe"; Description: "Launch Ladybird"; Flags: nowait postinstall skipifsilent unchecked
+          '@ | Out-File -FilePath ladybird.iss -Encoding ascii
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" ladybird.iss
+
+      - name: Upload ladybird-setup
+        uses: actions/upload-artifact@v4
+        with:
+          name: ladybird-windows-setup
+          path: Output/LadybirdSetup.exe
+          retention-days: 14
+          if-no-files-found: error
