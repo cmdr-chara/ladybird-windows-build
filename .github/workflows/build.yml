@@ -121,6 +121,14 @@ jobs:
           repository: ${{ env.LADYBIRD_REPO }}
           ref: ${{ env.LADYBIRD_REF }}
 
+      - name: Patch upstream source for clang-23
+        shell: pwsh
+        # clang >= 21 diagnoses s_disable_sandbox as set-but-unused on Windows
+        # (it is only read inside #if !AK_OS_WINDOWS) and Ladybird hardcodes -Werror.
+        run: |
+          $p = "Libraries/LibWebView/CrashReport.cpp"
+          (Get-Content $p -Raw) -replace 'static DisableSandbox s_disable_sandbox', '[[maybe_unused]] static DisableSandbox s_disable_sandbox' | Set-Content $p -NoNewline
+
       - name: Setup environment
         shell: bash
         run: |
@@ -190,7 +198,7 @@ jobs:
         # Newer Clang (>= 21) emits warnings upstream CI (Clang 20) never sees,
         # and Ladybird builds with -Werror. Specific -Wno-x overrides -Werror
         # regardless of flag order; extend the list as new ones appear.
-        run: cmake --preset Release -B Build -DLADYBIRD_BASELINE_CPU_TARGET=ON -DCMAKE_CXX_FLAGS=-Wno-unused-but-set-global -DCMAKE_C_FLAGS=-Wno-unused-but-set-global
+        run: cmake --preset Release -B Build -DLADYBIRD_BASELINE_CPU_TARGET=ON "-DCMAKE_CXX_FLAGS=-clang:-Wno-unused-but-set-global" "-DCMAKE_C_FLAGS=-clang:-Wno-unused-but-set-global"
 
       - name: Build
         working-directory: ${{ github.workspace }}/Build
